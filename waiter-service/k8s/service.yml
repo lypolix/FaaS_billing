@@ -1,0 +1,60 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: waiter
+  namespace: default
+  annotations:
+    serving.knative.dev/creator: "faas-billing-system"
+  labels:
+    app.kubernetes.io/name: waiter
+    app.kubernetes.io/component: test-service
+    app.kubernetes.io/part-of: faas-billing
+spec:
+  template:
+    metadata:
+      annotations:
+        # Автоскейлинг
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "5" 
+        autoscaling.knative.dev/target: "10"
+        autoscaling.knative.dev/metric: "concurrency"
+        
+        # Метрики для Prometheus
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+      labels:
+        app: waiter
+        tenant: demo-tenant
+        version: v1
+        billing.enabled: "true"
+    spec:
+      containers:
+        - image: waiter:latest
+          ports:
+            - containerPort: 8080
+              name: http1
+          env:
+            - name: TENANT_ID
+              value: "demo-tenant"
+            - name: PORT
+              value: "8080"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"  # Увеличено для тестов памяти
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
