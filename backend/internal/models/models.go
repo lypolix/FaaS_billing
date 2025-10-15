@@ -1,165 +1,126 @@
 package models
 
 import (
-    "time"
-    "encoding/json"
-    "github.com/google/uuid"
-    "database/sql/driver"
+	"time"
+
+	"github.com/google/uuid"
 )
 
-type JSONB map[string]interface{}
-
-func (j JSONB) Value() (driver.Value, error) {
-    return json.Marshal(j)
-}
-
-func (j *JSONB) Scan(value interface{}) error {
-    bytes, ok := value.([]byte)
-    if !ok {
-        return nil
-    }
-    return json.Unmarshal(bytes, j)
-}
-
-// Tenant - арендатор
+// Tenant — включает Currency и Status для сидера
 type Tenant struct {
-    ID           uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-    Name         string    `json:"name" gorm:"not null"`
-    Currency     string    `json:"currency" gorm:"default:'RUB'"`
-    TaxRate      float64   `json:"tax_rate" gorm:"default:0.20"`
-    Labels       JSONB     `json:"labels" gorm:"type:jsonb"`
-    Status       string    `json:"status" gorm:"default:'active'"`
-    CreatedAt    time.Time `json:"created_at"`
-    UpdatedAt    time.Time `json:"updated_at"`
+	ID        uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	Name      string    `json:"name"`
+	Currency  string    `json:"currency"`
+	TaxRate   float64   `json:"tax_rate"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
-// Service - Knative сервис
 type Service struct {
-    ID                  uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-    TenantID           uuid.UUID `json:"tenant_id" gorm:"type:uuid;not null"`
-    Name               string    `json:"name" gorm:"not null"`
-    Namespace          string    `json:"namespace" gorm:"not null"`
-    Labels             JSONB     `json:"labels" gorm:"type:jsonb"`
-    AutoscalingMetric  string    `json:"autoscaling_metric" gorm:"default:'concurrency'"`
-    AutoscalingTarget  int       `json:"autoscaling_target" gorm:"default:100"`
-    MinScale           int       `json:"min_scale" gorm:"default:0"`
-    MaxScale           int       `json:"max_scale" gorm:"default:1000"`
-    ProvisionedConcurrency *int  `json:"provisioned_concurrency"`
-    CreatedAt          time.Time `json:"created_at"`
-    UpdatedAt          time.Time `json:"updated_at"`
-    
-    Tenant             Tenant     `json:"tenant" gorm:"foreignKey:TenantID"`
-    Revisions          []Revision `json:"revisions" gorm:"foreignKey:ServiceID"`
+	ID                uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	TenantID          uuid.UUID `gorm:"type:uuid;index" json:"tenant_id"`
+	Name              string    `json:"name"`
+	Namespace         string    `json:"namespace"`
+	AutoscalingMetric string    `json:"autoscaling_metric"`
+	AutoscalingTarget int       `json:"autoscaling_target"`
+	MinScale          int       `json:"min_scale"`
+	MaxScale          int       `json:"max_scale"`
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
-// Revision - версия сервиса
 type Revision struct {
-    ID                   uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-    ServiceID           uuid.UUID `json:"service_id" gorm:"type:uuid;not null"`
-    RevisionName        string    `json:"revision_name" gorm:"not null"`
-    Image               string    `json:"image"`
-    ResourcesMemoryMB   int       `json:"resources_memory_mb" gorm:"default:128"`
-    ResourcesCPUCores   float64   `json:"resources_cpu_cores" gorm:"default:0.1"`
-    ScaleToZero         bool      `json:"scale_to_zero" gorm:"default:true"`
-    Labels              JSONB     `json:"labels" gorm:"type:jsonb"`
-    CreatedAt           time.Time `json:"created_at"`
-    RetiredAt           *time.Time `json:"retired_at"`
-    
-    Service             Service   `json:"service" gorm:"foreignKey:ServiceID"`
+	ID                uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ServiceID         uuid.UUID `gorm:"type:uuid;index"`
+	RevisionName      string
+	Image             string
+	ResourcesMemoryMB int
+	ResourcesCPUCores float64
+	ScaleToZero       bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
-// PricingPlan - тарифный план
 type PricingPlan struct {
-    ID                         uuid.UUID  `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-    Name                       string     `json:"name" gorm:"not null"`
-    Description                string     `json:"description"`
-    Currency                   string     `json:"currency" gorm:"default:'RUB'"`
-    EffectiveFrom             time.Time  `json:"effective_from"`
-    EffectiveThrough          *time.Time `json:"effective_through"`
-    PricePerInvocation        float64    `json:"price_per_invocation" gorm:"default:0.0"`
-    PricePerMBMs              float64    `json:"price_per_mb_ms" gorm:"default:0.0"`
-    PricePerExecMs            float64    `json:"price_per_exec_ms" gorm:"default:0.0"`
-    PricePerColdStart         float64    `json:"price_per_cold_start" gorm:"default:0.0"`
-    PricePerCPUCoreSec        float64    `json:"price_per_cpu_core_sec" gorm:"default:0.0"`
-    PricePerGBEgress          float64    `json:"price_per_gb_egress" gorm:"default:0.0"`
-    ProvisionedConcurrencyHourPrice float64 `json:"provisioned_concurrency_hour_price" gorm:"default:0.0"`
-    FreeTierInvocations       int64      `json:"free_tier_invocations" gorm:"default:1000000"`
-    FreeTierMBMs              int64      `json:"free_tier_mb_ms" gorm:"default:400000"`
-    CreatedAt                 time.Time  `json:"created_at"`
-    UpdatedAt                 time.Time  `json:"updated_at"`
+	ID                  uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	TenantID            uuid.UUID `gorm:"type:uuid;index"`
+	Name                string
+	Description         string
+	Currency            string
+	PricePerInvocation  float64
+	PricePerMBMs        float64
+	PricePerExecMs      float64
+	PricePerColdStart   float64
+	FreeTierInvocations float64
+	FreeTierMBMs        float64
+	EffectiveFrom       time.Time
+	EffectiveThrough    *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
-// UsageRaw - сырые метрики
 type UsageRaw struct {
-    ID           int64     `json:"id" gorm:"primary_key;auto_increment"`
-    Timestamp    time.Time `json:"timestamp" gorm:"not null;index:idx_usage_raw_ts"`
-    Source       string    `json:"source" gorm:"not null"`
-    Metric       string    `json:"metric" gorm:"not null;index:idx_usage_raw_metric"`
-    Value        float64   `json:"value" gorm:"not null"`
-    Unit         string    `json:"unit" gorm:"not null"`
-    Labels       JSONB     `json:"labels" gorm:"type:jsonb;not null"`
-    Temporality  string    `json:"temporality" gorm:"default:'delta'"`
-    IngestID     uuid.UUID `json:"ingest_id" gorm:"type:uuid"`
+	ID         uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	TenantID   uuid.UUID  `gorm:"type:uuid;index" json:"tenant_id"`
+	ServiceID  uuid.UUID  `gorm:"type:uuid;index" json:"service_id"`
+	RevisionID *uuid.UUID `gorm:"type:uuid;index" json:"revision_id,omitempty"`
+
+	Metric      string    `json:"metric"`
+	Value       float64   `json:"value"`
+	Unit        string    `json:"unit"`
+	Temporality string    `json:"temporality"`
+
+	Timestamp time.Time `json:"timestamp"`
+	Labels    string    `json:"labels"`
+	CreatedAt time.Time
 }
 
-// UsageAggregate - агрегированные данные
 type UsageAggregate struct {
-    ID              uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-    WindowStart     time.Time `json:"window_start" gorm:"not null;index:idx_usage_agg_window"`
-    WindowEnd       time.Time `json:"window_end" gorm:"not null"`
-    TenantID        uuid.UUID `json:"tenant_id" gorm:"type:uuid;not null;index:idx_usage_agg_tenant"`
-    ServiceID       uuid.UUID `json:"service_id" gorm:"type:uuid;not null;index:idx_usage_agg_service"`  
-    RevisionID      uuid.UUID `json:"revision_id" gorm:"type:uuid;not null"`
-    Invocations     int64     `json:"invocations" gorm:"default:0"`
-    DurationMsSum   int64     `json:"duration_ms_sum" gorm:"default:0"`
-    DurationMsP50   float64   `json:"duration_ms_p50" gorm:"default:0"`
-    DurationMsP95   float64   `json:"duration_ms_p95" gorm:"default:0"`
-    MemMBMsSum      int64     `json:"mem_mb_ms_sum" gorm:"default:0"`
-    CPUCoreSecSum   float64   `json:"cpu_core_sec_sum" gorm:"default:0"`
-    ColdStarts      int64     `json:"cold_starts" gorm:"default:0"`
-    EgressGB        float64   `json:"egress_gb" gorm:"default:0"`
-    Errors5xx       int64     `json:"errors_5xx" gorm:"default:0"`
-    ConcurrencyAvg  float64   `json:"concurrency_avg" gorm:"default:0"`
-    PCHours         float64   `json:"pc_hours" gorm:"default:0"`
-    EvidenceSpan    []int64   `json:"evidence_span" gorm:"type:integer[]"`
-    
-    Tenant          Tenant    `json:"tenant" gorm:"foreignKey:TenantID"`
-    Service         Service   `json:"service" gorm:"foreignKey:ServiceID"`
-    Revision        Revision  `json:"revision" gorm:"foreignKey:RevisionID"`
+	ID         uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	TenantID   uuid.UUID  `gorm:"type:uuid;index"`
+	ServiceID  uuid.UUID  `gorm:"type:uuid;index"`
+	RevisionID *uuid.UUID `gorm:"type:uuid;index"`
+
+	WindowStart time.Time `gorm:"index"`
+	WindowEnd   time.Time `gorm:"index"`
+
+	Invocations   int64
+	MemMBMsSum    int64
+	DurationMsSum int64
+	ColdStarts    int64
+	CPUCoreSecSum float64
+	EgressGB      float64
+	PCHours       float64
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
-// Bill - счёт
 type Bill struct {
-    ID               uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-    TenantID        uuid.UUID `json:"tenant_id" gorm:"type:uuid;not null"`
-    PeriodStart     time.Time `json:"period_start" gorm:"not null"`
-    PeriodEnd       time.Time `json:"period_end" gorm:"not null"`
-    Currency        string    `json:"currency" gorm:"not null"`
-    SubTotal        float64   `json:"sub_total" gorm:"not null"`
-    TaxAmount       float64   `json:"tax_amount" gorm:"not null"`
-    Total           float64   `json:"total" gorm:"not null"`
-    Status          string    `json:"status" gorm:"default:'draft'"`
-    AppliedPlanSnapshot JSONB `json:"applied_plan_snapshot" gorm:"type:jsonb"`
-    CreatedAt       time.Time `json:"created_at"`
-    UpdatedAt       time.Time `json:"updated_at"`
-    
-    Tenant          Tenant     `json:"tenant" gorm:"foreignKey:TenantID"`
-    LineItems       []LineItem `json:"line_items" gorm:"foreignKey:BillID"`
+	ID          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	TenantID    uuid.UUID `gorm:"type:uuid;index" json:"tenant_id"`
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
+	Currency    string    `json:"currency"`
+	SubTotal    float64   `json:"sub_total"`
+	TaxAmount   float64   `json:"tax_amount"`
+	Total       float64   `json:"total"`
+	Status      string    `json:"status"`
+	LineItems   []LineItem
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
-// LineItem - позиция счёта
 type LineItem struct {
-    ID                  uuid.UUID   `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-    BillID             uuid.UUID   `json:"bill_id" gorm:"type:uuid;not null"`
-    ScopeType          string      `json:"scope_type" gorm:"not null"`
-    ScopeID            uuid.UUID   `json:"scope_id" gorm:"type:uuid;not null"`
-    MetricType         string      `json:"metric_type" gorm:"not null"`
-    Quantity           float64     `json:"quantity" gorm:"not null"`
-    Unit               string      `json:"unit" gorm:"not null"`
-    UnitPrice          float64     `json:"unit_price" gorm:"not null"`
-    Amount             float64     `json:"amount" gorm:"not null"`
-    UsageAggregateIDs  []uuid.UUID `json:"usage_aggregate_ids" gorm:"type:uuid[]"`
-    Notes              string      `json:"notes"`
-    
-    Bill               Bill        `json:"bill" gorm:"foreignKey:BillID"`
+	ID         uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	BillID     uuid.UUID `gorm:"type:uuid;index" json:"bill_id"`
+	ScopeType  string    `json:"scope_type"`
+	ScopeID    uuid.UUID `json:"scope_id"`
+	MetricType string    `json:"metric_type"`
+	Quantity   float64   `json:"quantity"`
+	Unit       string    `json:"unit"`
+	UnitPrice  float64   `json:"unit_price"`
+	Amount     float64   `json:"amount"`
+	CreatedAt  time.Time
 }

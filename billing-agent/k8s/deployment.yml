@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-agent
+  labels:
+    app: billing-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: billing-agent
+  template:
+    metadata:
+      labels:
+        app: billing-agent
+    spec:
+      containers:
+      - name: agent
+        image: your-registry/billing-agent:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: BA_BACKEND
+          value: "http://backend:8081/api/v1"
+        - name: BA_TENANT_ID
+          value: "<tenant-uuid>"
+        - name: BA_SERVICE_ID
+          value: "<service-uuid>"
+        - name: BA_REVISION_ID
+          value: ""
+        - name: BA_INTERVAL
+          value: "1m"
+        - name: BA_BATCH
+          value: "200"
+        - name: BA_CALC
+          value: "false"
+        - name: BA_CALC_WINDOW
+          value: "1h"
+        - name: BA_CALC_SERVICE_ONLY
+          value: "true"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
