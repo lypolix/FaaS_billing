@@ -83,8 +83,11 @@ kubectl apply -f deployment/postgres/ || true
 
 echo "[Step 9] Deploy waiter service"
 kubectl delete ksvc waiter -n default --ignore-not-found
-kubectl apply -f waiter-service/k8s/service.yml
+docker build -t dev.local/waiter:latest ./waiter-service
+kubectl apply -f ./waiter-service/service.yml
 kubectl wait ksvc waiter --timeout=300s --for=condition=Ready
+# kubectl apply -f waiter-service/k8s/service.yml
+# kubectl wait ksvc waiter --timeout=300s --for=condition=Ready
 
 echo "[Step 10] Smoke test waiter"
 curl -s -H "Host: waiter.default.knative.demo.com" "http://localhost/invoke?sleep_ms=200&mem_mb=50" || true
