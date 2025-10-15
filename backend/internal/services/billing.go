@@ -1,190 +1,232 @@
 package services
 
 import (
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lypolix/FaaS-billing/internal/database"
 	"github.com/lypolix/FaaS-billing/internal/models"
+	"gorm.io/gorm"
 )
 
-type BillingService struct{}
-
-func NewBillingService() BillingService { return BillingService{} }
-
-type CostComponent struct {
-	Type      string  `json:"type"`
-	Quantity  float64 `json:"quantity"`
-	UnitPrice float64 `json:"unit_price"`
-	Amount    float64 `json:"amount"`
-	FreeTier  float64 `json:"freetier,omitempty"`
-	Unit      string  `json:"unit"`
+type BillingService struct {
+	db *gorm.DB
 }
 
-type ServiceCost struct {
-	ServiceID   uuid.UUID       `json:"serviceid"`
-	ServiceName string          `json:"servicename"`
-	Components  []CostComponent `json:"components"`
-	TotalCost   float64         `json:"totalcost"`
+func NewBillingService(db *gorm.DB) *BillingService {
+	return &BillingService{db: db}
 }
 
-type CostBreakdown struct {
-	TenantID    uuid.UUID    `json:"tenantid"`
-	PeriodStart time.Time    `json:"periodstart"`
-	PeriodEnd   time.Time    `json:"periodend"`
-	Services    []ServiceCost`json:"services"`
-	TotalCost   float64      `json:"totalcost"`
-	Currency    string       `json:"currency"`
-}
+// CalculateBill - основная функция расчёта стоимости по формулам Yandex Cloud
+func (s *BillingService) CalculateBill(tenantID string, startTime, endTime time.Time) (*models.BillingResult, error) {
+	// Получаем тарифный план
+	var pricingPlan models.PricingPlan
+	err := s.db.Where("(tenant_id = ? OR tenant_id IS NULL) AND active = ?", tenantID, true).
+		Order("tenant_id DESC").First(&pricingPlan).Error
+	if err != nil {
+		return nil, fmt.Errorf("pricing plan not found: %w", err)
+	}
 
-func (bs BillingService) CalculateCost(tenantID uuid.UUID, startTime, endTime time.Time, serviceID uuid.UUID) (CostBreakdown, error) {
+	// Получаем агрегированные данные за период
 	var aggregates []models.UsageAggregate
-	q := database.DB.
-		Where("tenant_id = ? AND window_start >= ? AND window_end <= ?", tenantID, startTime, endTime)
-	if serviceID != uuid.Nil {
-		q = q.Where("service_id = ?", serviceID)
-	}
-	if err := q.Find(&aggregates).Error; err != nil {
-		return CostBreakdown{}, err
+	err = s.db.Where("tenant_id = ? AND window_start >= ? AND window_end <= ?", 
+		tenantID, startTime, endTime).Find(&aggregates).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get usage aggregates: %w", err)
 	}
 
-	var plan models.PricingPlan
-	if err := database.DB.
-		Where("tenant_id = ? AND effective_from <= ? AND (effective_through IS NULL OR effective_through >= ?)",
-			tenantID, startTime, endTime).
-		Order("effective_from DESC").
-		First(&plan).Error; err != nil {
-		plan = models.PricingPlan{
-			TenantID:            tenantID,
-			Currency:            "RUB",
-			PricePerInvocation:  0.0000035,
-			PricePerMBMs:        0.000016,
-			PricePerExecMs:      0,
-			PricePerColdStart:   0.001,
-			FreeTierInvocations: 1000000,
-			FreeTierMBMs:        400000,
-		}
-	}
-
-	group := map[uuid.UUID][]models.UsageAggregate{}
-	for _, a := range aggregates {
-		group[a.ServiceID] = append(group[a.ServiceID], a)
-	}
-
-	out := CostBreakdown{
-		TenantID:    tenantID,
+	// Считаем общие показатели
+	totals := s.calculateTotals(aggregates)
+	
+	// Применяем биллинговые формулы
+	result := &models.BillingResult{
+		TenantID:    uuid.MustParse(tenantID),
 		PeriodStart: startTime,
 		PeriodEnd:   endTime,
-		Currency:    plan.Currency,
-	}
-	var total float64
-
-	// имена сервисов
-	var services []models.Service
-	_ = database.DB.Where("tenant_id = ?", tenantID).Find(&services).Error
-	nameByID := map[uuid.UUID]string{}
-	for _, s := range services {
-		nameByID[s.ID] = s.Name
+		Currency:    pricingPlan.Currency,
+		LineItems:   []models.BillingLineItem{},
 	}
 
-	for id, arr := range group {
-		sc := bs.calculateServiceCost(arr, plan)
-		sc.ServiceID = id
-		sc.ServiceName = nameByID[id]
-		out.Services = append(out.Services, sc)
-		total += sc.TotalCost
+	// 1. Расчёт стоимости вызовов
+	invocationsItem := s.calculateInvocationsCost(totals.TotalInvocations, pricingPlan)
+	result.LineItems = append(result.LineItems, invocationsItem)
+
+	// 2. Расчёт стоимости времени выполнения (ГБ×час)
+	computeItem := s.calculateComputeCost(totals.TotalGBHours, pricingPlan)
+	result.LineItems = append(result.LineItems, computeItem)
+
+	// 3. Расчёт стоимости исходящего трафика
+	if totals.TotalEgressGB > 0 {
+		egressItem := s.calculateEgressCost(totals.TotalEgressGB, pricingPlan)
+		result.LineItems = append(result.LineItems, egressItem)
 	}
-	out.TotalCost = total
-	return out, nil
+
+	// 4. Дополнительно: холодные старты (пока бесплатно)
+	coldStartsItem := models.BillingLineItem{
+		Description:    "Холодные старты",
+		Quantity:       float64(totals.TotalColdStarts),
+		UnitPrice:      pricingPlan.PricePerColdStart,
+		FreeTierUsed:   float64(totals.TotalColdStarts), // все бесплатно пока
+		BillableAmount: 0,
+		TotalCost:      0,
+		Currency:       pricingPlan.Currency,
+	}
+	result.LineItems = append(result.LineItems, coldStartsItem)
+
+	// Подсчитываем общую стоимость
+	var totalCost float64
+	for _, item := range result.LineItems {
+		totalCost += item.TotalCost
+	}
+	result.TotalCost = math.Round(totalCost*100) / 100 // округляем до копеек
+
+	// Формируем сводку free tier
+	result.FreeTierSummary = models.FreeTierSummary{
+		InvocationsUsed:  totals.TotalInvocations,
+		InvocationsLimit: pricingPlan.FreeTierInvocations,
+		GBHoursUsed:      totals.TotalGBHours,
+		GBHoursLimit:     pricingPlan.FreeTierGBHours,
+		EgressGBUsed:     totals.TotalEgressGB,
+		EgressGBLimit:    pricingPlan.FreeTierEgressGB,
+	}
+
+	return result, nil
 }
 
-func (bs BillingService) calculateServiceCost(aggs []models.UsageAggregate, plan models.PricingPlan) ServiceCost {
-	var (
-		totalInvocations int64
-		totalMBMs        int64
-		totalColdStarts  int64
-		totalExecMs      int64
-	)
-	for _, a := range aggs {
-		totalInvocations += a.Invocations
-		totalMBMs += a.MemMBMsSum
-		totalColdStarts += a.ColdStarts
-		totalExecMs += a.DurationMsSum
-	}
+type UsageTotals struct {
+	TotalInvocations int64
+	TotalGBHours     float64
+	TotalEgressGB    float64
+	TotalColdStarts  int64
+}
 
-	var comps []CostComponent
-	var total float64
-
-	// Invocations
-	if plan.PricePerInvocation > 0 {
-		billable := float64(totalInvocations)
-		free := plan.FreeTierInvocations
-		if billable > free {
-			billable -= free
-		} else {
-			billable = 0
-		}
-		amount := billable * plan.PricePerInvocation
-		total += amount
-		comps = append(comps, CostComponent{
-			Type:      "invocations",
-			Quantity:  float64(totalInvocations),
-			UnitPrice: plan.PricePerInvocation,
-			Amount:    amount,
-			FreeTier:  free,
-			Unit:      "requests",
-		})
+func (s *BillingService) calculateTotals(aggregates []models.UsageAggregate) UsageTotals {
+	totals := UsageTotals{}
+	
+	for _, agg := range aggregates {
+		totals.TotalInvocations += agg.Invocations
+		totals.TotalColdStarts += int64(agg.ColdStarts)
+		
+		// Переводим МБ×час в ГБ×час
+		gbHours := agg.TotalMemoryMBHours / 1024.0
+		totals.TotalGBHours += gbHours
+		
+		// Переводим bytes в GB
+		egressGB := float64(agg.EgressBytes) / (1024.0 * 1024.0 * 1024.0)
+		totals.TotalEgressGB += egressGB
 	}
+	
+	return totals
+}
 
-	// Memory MB-ms
-	if plan.PricePerMBMs > 0 {
-		billable := float64(totalMBMs)
-		free := plan.FreeTierMBMs
-		if billable > free {
-			billable -= free
-		} else {
-			billable = 0
-		}
-		amount := billable * plan.PricePerMBMs
-		total += amount
-		comps = append(comps, CostComponent{
-			Type:      "mbms",
-			Quantity:  float64(totalMBMs),
-			UnitPrice: plan.PricePerMBMs,
-			Amount:    amount,
-			FreeTier:  free,
-			Unit:      "MB-ms",
-		})
+// Формула Yandex: 17,28 ₽ × ((количество_вызовов - 1_000_000) / 1_000_000)
+func (s *BillingService) calculateInvocationsCost(totalInvocations int64, plan models.PricingPlan) models.BillingLineItem {
+	freeTierUsed := int64(math.Min(float64(totalInvocations), float64(plan.FreeTierInvocations)))
+	billableInvocations := int64(math.Max(0, float64(totalInvocations-plan.FreeTierInvocations)))
+	
+	// Цена за миллион
+	billableMillions := float64(billableInvocations) / 1_000_000.0
+	cost := billableMillions * plan.PricePerMillionInvocations
+	
+	return models.BillingLineItem{
+		Description:    "Вызовы функций",
+		Quantity:       float64(totalInvocations),
+		UnitPrice:      plan.PricePerMillionInvocations, // за миллион
+		FreeTierUsed:   float64(freeTierUsed),
+		BillableAmount: float64(billableInvocations),
+		TotalCost:      math.Round(cost*100) / 100,
+		Currency:       plan.Currency,
 	}
+}
 
-	// Exec time ms
-	if plan.PricePerExecMs > 0 {
-		amount := float64(totalExecMs) * plan.PricePerExecMs
-		total += amount
-		comps = append(comps, CostComponent{
-			Type:      "execms",
-			Quantity:  float64(totalExecMs),
-			UnitPrice: plan.PricePerExecMs,
-			Amount:    amount,
-			Unit:      "ms",
-		})
+// Формула Yandex: 5,9076 ₽ × (ГБ×час - 10)
+func (s *BillingService) calculateComputeCost(totalGBHours float64, plan models.PricingPlan) models.BillingLineItem {
+	freeTierUsed := math.Min(totalGBHours, plan.FreeTierGBHours)
+	billableGBHours := math.Max(0, totalGBHours-plan.FreeTierGBHours)
+	
+	cost := billableGBHours * plan.PricePerGBHour
+	
+	return models.BillingLineItem{
+		Description:    "Время выполнения функций (ГБ×час)",
+		Quantity:       totalGBHours,
+		UnitPrice:      plan.PricePerGBHour,
+		FreeTierUsed:   freeTierUsed,
+		BillableAmount: billableGBHours,
+		TotalCost:      math.Round(cost*100) / 100,
+		Currency:       plan.Currency,
 	}
+}
 
-	// Cold starts
-	if plan.PricePerColdStart > 0 {
-		amount := float64(totalColdStarts) * plan.PricePerColdStart
-		total += amount
-		comps = append(comps, CostComponent{
-			Type:      "coldstart",
-			Quantity:  float64(totalColdStarts),
-			UnitPrice: plan.PricePerColdStart,
-			Amount:    amount,
-			Unit:      "starts",
-		})
+// Формула Yandex: 1,6524 ₽ × (ГБ_трафика - 100)
+func (s *BillingService) calculateEgressCost(totalEgressGB float64, plan models.PricingPlan) models.BillingLineItem {
+	freeTierUsed := math.Min(totalEgressGB, plan.FreeTierEgressGB)
+	billableEgressGB := math.Max(0, totalEgressGB-plan.FreeTierEgressGB)
+	
+	cost := billableEgressGB * plan.PricePerGBEgress
+	
+	return models.BillingLineItem{
+		Description:    "Исходящий трафик",
+		Quantity:       totalEgressGB,
+		UnitPrice:      plan.PricePerGBEgress,
+		FreeTierUsed:   freeTierUsed,
+		BillableAmount: billableEgressGB,
+		TotalCost:      math.Round(cost*100) / 100,
+		Currency:       plan.Currency,
 	}
+}
 
-	return ServiceCost{
-		Components: comps,
-		TotalCost:  total,
+// Сохранить счёт в БД
+func (s *BillingService) SaveBill(result *models.BillingResult) (*models.Bill, error) {
+	lineItemsJSON := make(models.JSONB)
+	lineItemsJSON["items"] = result.LineItems
+	lineItemsJSON["free_tier"] = result.FreeTierSummary
+	
+	bill := &models.Bill{
+		TenantID:    result.TenantID,
+		PeriodStart: result.PeriodStart,
+		PeriodEnd:   result.PeriodEnd,
+		TotalAmount: result.TotalCost,
+		Currency:    result.Currency,
+		Status:      "draft",
+		LineItems:   lineItemsJSON,
+		CreatedAt:   time.Now(),
 	}
+	
+	err := s.db.Create(bill).Error
+	return bill, err
+}
+
+// Демонстрация расчёта как в документации Yandex
+func (s *BillingService) ExampleCalculation() *models.BillingResult {
+	// Пример из документации:
+	// Память: 512 МБ, Вызовы: 10,000,000, Время: 800 мс каждый
+	// Результат должен быть: 6,660.44 ₽
+	
+	memoryMB := 512.0
+	invocations := int64(10_000_000)
+	durationMS := 800.0
+	
+	// Переводим в ГБ×час
+	gbHours := (memoryMB / 1024.0) * (durationMS / 3_600_000.0) * float64(invocations)
+	
+	plan := models.PricingPlan{
+		PricePerMillionInvocations: 17.28,
+		PricePerGBHour:            5.9076,
+		FreeTierInvocations:       1_000_000,
+		FreeTierGBHours:           10.0,
+		Currency:                  "RUB",
+	}
+	
+	result := &models.BillingResult{
+		Currency: "RUB",
+		LineItems: []models.BillingLineItem{
+			s.calculateInvocationsCost(invocations, plan),
+			s.calculateComputeCost(gbHours, plan),
+		},
+	}
+	
+	result.TotalCost = result.LineItems[0].TotalCost + result.LineItems[1].TotalCost
+	
+	return result
 }

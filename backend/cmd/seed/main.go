@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lypolix/FaaS-billing/internal/database"
 	"github.com/lypolix/FaaS-billing/internal/models"
 )
@@ -12,64 +13,42 @@ func main() {
 	database.Connect()
 	database.Migrate()
 
-	// Create tenant
 	tenant := models.Tenant{
-		Name:     "Demo Tenant",
-		Currency: "RUB",
-		TaxRate:  0.20,
-		Status:   "active",
+		ID:           uuid.New(),
+		Name:         "Demo Tenant",
+		BillingEmail: "billing@example.com",
+		Currency:     "RUB",
+		Timezone:     "Europe/Moscow",
 	}
-	if err := database.DB.Create(&tenant).Error; err != nil {
-		log.Fatal("create tenant:", err)
-	}
+	_ = database.DB.Create(&tenant).Error
 
-	// Create pricing plan
-	pricingPlan := models.PricingPlan{
-		TenantID:            tenant.ID,
-		Name:                "Standard Plan",
-		Description:         "Standard pricing for FaaS",
-		Currency:            "RUB",
-		EffectiveFrom:       time.Now().AddDate(0, -1, 0),
-		PricePerInvocation:  0.0000035,
-		PricePerMBMs:        0.000016,
-		PricePerExecMs:      0.0,
-		PricePerColdStart:   0.001,
-		FreeTierInvocations: 1000000,
-		FreeTierMBMs:        400000,
-	}
-	if err := database.DB.Create(&pricingPlan).Error; err != nil {
-		log.Fatal("create pricing plan:", err)
-	}
-
-	// Create service
 	service := models.Service{
-		TenantID:          tenant.ID,
-		Name:              "waiter",
-		Namespace:         "default",
-		AutoscalingMetric: "concurrency",
-		AutoscalingTarget: 10,
-		MinScale:          0,
-		MaxScale:          10,
+		ID:            uuid.New(),
+		TenantID:      tenant.ID,
+		Name:          "waiter",
+		Namespace:     "default",
+		Runtime:       "go",
+		MemoryLimitMB: 256,
+		CPULimitCores: 0.5,
 	}
-	if err := database.DB.Create(&service).Error; err != nil {
-		log.Fatal("create service:", err)
-	}
+	_ = database.DB.Create(&service).Error
 
-	// Create revision
-	revision := models.Revision{
-		ServiceID:         service.ID,
-		RevisionName:      "waiter-00001",
-		Image:             "waiter:latest",
-		ResourcesMemoryMB: 128,
-		ResourcesCPUCores: 0.1,
-		ScaleToZero:       true,
+	plan := models.PricingPlan{
+		Name:                      "Yandex Default",
+		Currency:                  "RUB",
+		PricePerMillionInvocations: 17.28,
+		PricePerGBHour:            5.9076,
+		PricePerColdStart:         0,
+		PricePerGBEgress:          1.6524,
+		PricePerGBHourProvisioned: 1.296,
+		PricePerGBHourActive:      2.484,
+		FreeTierInvocations:       1_000_000,
+		FreeTierGBHours:           10.0,
+		FreeTierEgressGB:          100.0,
+		Active:                    true,
+		CreatedAt:                 time.Now(),
 	}
-	if err := database.DB.Create(&revision).Error; err != nil {
-		log.Fatal("create revision:", err)
-	}
+	_ = database.DB.Create(&plan).Error
 
-	log.Println("Demo data created successfully!")
-	log.Printf("Tenant ID: %s", tenant.ID)
-	log.Printf("Service ID: %s", service.ID)
-	log.Printf("Revision ID: %s", revision.ID)
+	log.Println("Seed completed")
 }
