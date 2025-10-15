@@ -23,6 +23,7 @@ func Connect() {
 		getEnv("DB_NAME", "faasbilling"),
 		getEnv("DB_PORT", "5432"),
 	)
+
 	var err error
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
@@ -42,7 +43,6 @@ func Migrate() {
 		&models.UsageRaw{},
 		&models.UsageAggregate{},
 		&models.Bill{},
-		&models.LineItem{},
 	); err != nil {
 		log.Fatal("Failed to migrate: ", err)
 	}

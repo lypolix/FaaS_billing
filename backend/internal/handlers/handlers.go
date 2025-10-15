@@ -1,26 +1,27 @@
 package handlers
 
 import (
+	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
 	"github.com/lypolix/FaaS-billing/internal/database"
 	"github.com/lypolix/FaaS-billing/internal/models"
 	"github.com/lypolix/FaaS-billing/internal/services"
 )
 
 type Handler struct {
-	billingService services.BillingService
-	metricsService services.MetricsService
+	BillingService *services.BillingService
+	MetricsService *services.MetricsService
 }
 
 func NewHandler() Handler {
 	return Handler{
-		billingService: services.NewBillingService(),
-		metricsService: services.NewMetricsService(),
+		BillingService: services.NewBillingService(database.DB),
+		MetricsService: services.NewMetricsService(database.DB),
 	}
 }
 
@@ -117,18 +118,11 @@ func (h Handler) GetUsageAggregates(c *gin.Context) {
 		q = q.Where("service_id = ?", v)
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
-	if page < 1 {
-		page = 1
-	}
-	offset := (page - 1) * limit
-
-	if err := q.Offset(offset).Limit(limit).Order("window_start DESC").Find(&aggs).Error; err != nil {
+	if err := q.Order("window_start DESC").Find(&aggs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": aggs, "page": page, "limit": limit})
+	c.JSON(http.StatusOK, gin.H{"data": aggs})
 }
 
 // Metrics ingest
@@ -138,26 +132,43 @@ func (h Handler) IngestMetrics(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.metricsService.IngestMetrics(batch); err != nil {
+	if err := h.MetricsService.IngestMetrics(batch); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "ok", "count": len(batch)})
 }
 
-// Billing
-func (h Handler) CalculateCost(c *gin.Context) {
+// Metrics aggregate (ручной запуск)
+func (h Handler) AggregateMetrics(c *gin.Context) {
 	var req struct {
-		TenantID  uuid.UUID `json:"tenant_id" binding:"required"`
-		StartTime time.Time `json:"start_time" binding:"required"`
-		EndTime   time.Time `json:"end_time" binding:"required"`
-		ServiceID uuid.UUID `json:"service_id"`
+		StartTime  time.Time `json:"start_time" binding:"required"`
+		EndTime    time.Time `json:"end_time" binding:"required"`
+		WindowSize string    `json:"window_size" binding:"required"` // "5m","1h","1d"
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	out, err := h.billingService.CalculateCost(req.TenantID, req.StartTime, req.EndTime, req.ServiceID)
+	if err := h.MetricsService.AggregateMetrics(req.StartTime, req.EndTime, req.WindowSize); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "aggregation completed"})
+}
+
+// Billing
+func (h Handler) CalculateCost(c *gin.Context) {
+	var req struct {
+		TenantID  string    `json:"tenant_id" binding:"required"`
+		StartTime time.Time `json:"start_time" binding:"required"`
+		EndTime   time.Time `json:"end_time" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	out, err := h.BillingService.CalculateBill(req.TenantID, req.StartTime, req.EndTime)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -167,7 +178,7 @@ func (h Handler) CalculateCost(c *gin.Context) {
 
 func (h Handler) GenerateBill(c *gin.Context) {
 	var req struct {
-		TenantID  uuid.UUID `json:"tenant_id" binding:"required"`
+		TenantID  string    `json:"tenant_id" binding:"required"`
 		StartTime time.Time `json:"start_time" binding:"required"`
 		EndTime   time.Time `json:"end_time" binding:"required"`
 	}
@@ -175,7 +186,26 @@ func (h Handler) GenerateBill(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// Для простоты здесь можно вызывать CalculateCost и потом сохранять Bill,
-	// но в минимальном примере опущено.
-	c.JSON(http.StatusNotImplemented, gin.H{"message": "not implemented"})
+	result, err := h.BillingService.CalculateBill(req.TenantID, req.StartTime, req.EndTime)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := h.BillingService.SaveBill(result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save bill: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"message": "bill generated", "bill": result})
+}
+
+// ML proxy (простой вариант)
+func (h Handler) ProxyForecast(c *gin.Context) {
+	resp, err := http.Post("http://ai-forecast:8082/forecast/cost", "application/json", c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "ml service unreachable"})
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	c.Data(resp.StatusCode, "application/json", body)
 }

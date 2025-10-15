@@ -2,9 +2,8 @@ package main
 
 import (
 	"log"
-	"net/http"
+	"os"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
 	"github.com/lypolix/FaaS-billing/internal/database"
@@ -12,42 +11,49 @@ import (
 )
 
 func main() {
+	// подключаемся к БД и делаем миграции
 	database.Connect()
 	database.Migrate()
 
 	r := gin.Default()
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:3001"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-	}))
 
+	// Конструктор хендлеров принимает *gorm.DB через package database
 	h := handlers.NewHandler()
 
 	api := r.Group("/api/v1")
 	{
+		api.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
+
+		// tenants
 		api.POST("/tenants", h.CreateTenant)
 		api.GET("/tenants", h.GetTenants)
 		api.GET("/tenants/:id", h.GetTenant)
 
+		// services
 		api.POST("/services", h.CreateService)
 		api.GET("/services", h.GetServices)
 
+		// usage aggregates
 		api.GET("/usage-aggregates", h.GetUsageAggregates)
-		api.POST("/metrics/ingest", h.IngestMetrics)
 
+		// metrics ingest/aggregate
+		api.POST("/metrics/ingest", h.IngestMetrics)
+		api.POST("/metrics/aggregate", h.AggregateMetrics)
+
+		// billing
 		api.POST("/billing/calculate", h.CalculateCost)
 		api.POST("/billing/generate", h.GenerateBill)
+
+		// ml (прокси)
+		api.POST("/forecast/cost", h.ProxyForecast)
 	}
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
-	})
-
-	log.Println("Starting server on :8081")
-	if err := r.Run(":8081"); err != nil {
+	addr := os.Getenv("BACKEND_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	log.Println("Backend listening on", addr)
+	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
 	}
 }
