@@ -418,6 +418,26 @@ ports:
 
 ---
 
+## Что реализовано:
+**Прогноз на 1 час / 1 день / 1 неделю.**
+
+1) Берёт историю из UsageAggregate.
+2) Считает стоимость: invocations + memory + cold starts * price.
+**Описание переменных:**
+Frontend:
+- invocations — количество вызовов сервиса.
+- memory — потребление памяти (MB×ms).
+- cold_starts — количество холодных стартов.
+- total_cost — итоговая стоимость.
+- line_items — детализация счёта.
+ML:
+- ForecastRequest:
+- tenant_id — арендатор.
+- period — "1h", "1d", "1w".
+- ForecastResponse:
+- forecasted_cost — прогнозируемая стоимость.
+- components — детализация (invocations, memory, cold starts)
+
 ## План дальнейшей реализации
 
 ### Фаза 1: Завершение базового биллинга 
