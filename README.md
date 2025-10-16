@@ -423,6 +423,7 @@ ports:
 
 1) Берёт историю из UsageAggregate.
 2) Считает стоимость: invocations + memory + cold starts * price.
+   
 **Описание переменных:**
 Frontend:
 - invocations — количество вызовов сервиса.
@@ -437,6 +438,119 @@ ML:
 - ForecastResponse:
 - forecasted_cost — прогнозируемая стоимость.
 - components — детализация (invocations, memory, cold starts)
+
+# Расписание компонентов (Architecture at a glance)
+
+Ниже — краткая карта всех сервисов, слоёв и инфраструктуры. Блок можно вставить в README.
+
+## Платформа
+
+- Kubernetes (K8s)
+  - Оркестрация контейнеров, сеть, перезапуск, масштабирование.
+  - Используется как база для Knative.
+- Knative Serving + Kourier
+  - Serverless-слой поверх K8s: авто‑масштабирование до нуля, ревизии, маршрутизация по Host.
+  - Kourier — входной HTTP‑шлюз.
+- Локальный Docker Registry (localhost:5000)
+  - Хранилище образов, из которого кластер тянет контейнеры локально.
+- Prometheus + Grafana
+  - Сбор и визуализация метрик (pull с /metrics).
+- PostgreSQL
+  - Долговременное хранилище сырых и агрегированных метрик, тарифов и счетов.
+- Redis
+  - Очередь событий метрик (буфер), кеш конфигураций и справочников.
+
+## Сервисы (микросервисы)
+
+- waiter-service
+  - Тестовая функция (Go/Gin) с /invoke, /metrics, /healthz, /readiness.
+  - Имитация нагрузки и публикация метрик Prometheus.
+- queue-proxy
+  - HTTP-шлюз для событий метрик: /metrics/collect → Redis (metrics_queue).
+  - /metrics, /healthz для наблюдаемости.
+- saver
+  - Потребитель Redis очереди; сохраняет события в PostgreSQL (UsageRaw).
+- billing-agent (опционально)
+  - Обогащение метрик, детекция холодных стартов, отправка в backend/БД.
+- backend
+  - REST API биллинга и агрегирования:
+    - POST /metrics/ingest — приём сырых метрик (UsageRaw).
+    - POST /metrics/aggregate — агрегация в окна (UsageAggregate).
+    - POST /billing/calculate — расчёт стоимости по тарифам.
+    - CRUD: tenants, services, pricing plans.
+    - Прокси к ML: POST /forecast/cost.
+- ai-forecast (опционально)
+  - Прогноз стоимости на 1h/1d/1w по UsageAggregate + тарифам.
+- frontend (опционально)
+  - UI дашборда: текущие расходы, free tier, детализация, прогноз.
+
+## Слои
+
+- Сбор метрик (Collection)
+  - Prometheus pull с /metrics функций.
+  - Push канал: функции/агенты → queue-proxy → Redis.
+- Хранение (Storage)
+  - Redis — буфер событий, кеш.
+  - PostgreSQL — UsageRaw, UsageAggregate, PricingPlans, Bills, Tenants, Services.
+- Обработка (Processing)
+  - saver: Redis → PostgreSQL (сырые).
+  - backend: агрегатор окон (5m/1h/1d).
+- Биллинг (Billing Engine)
+  - backend/services/billing.go: формулы, free tier, line items, итоговая сумма.
+- Аналитика (Analytics & ML)
+  - ai-forecast: прогнозы расходов и компонентов.
+  - Prometheus/Grafana: наблюдаемость производительности.
+- Презентация (Presentation)
+  - frontend + backend API: отчёты, дашборды, интеграции.
+
+## Модели данных (ключевые)
+
+- Tenants(id, name, billing_email, currency, timezone, …)
+- Services(id, tenant_id, name, namespace, runtime, limits…)
+- Revisions(id, service_id, name, image, scaling_config, …)
+- UsageRaw(id, timestamp, tenant_id, service_id, revision_id, metric_name, value, labels)
+- UsageAggregate(id, window_start, window_end, window_size, tenant_id, service_id, revision_id, invocations, total_duration_ms, avg_duration_ms, p50, p95, avg_memory_mb, max_memory_mb, total_memory_mb_hours, cold_starts, errors, egress_bytes)
+- PricingPlan(id, name, currency, price_per_million_invocations, price_per_gb_hour, price_per_gb_egress, price_per_cold_start, free_tier_invocations, free_tier_gb_hours, free_tier_egress_gb, active)
+- Bill(id, tenant_id, period_start, period_end, total_amount, currency, status, line_items)
+
+## Формулы тарификации
+
+- Вызовы: 17.28 ₽ × ((invocations - 1,000,000) / 1,000,000), минимум 0.
+- Память (ГБ×час): 5.9076 ₽ × max(0, GB_hours - 10).
+- Исходящий трафик: 1.6524 ₽ × max(0, egress_GB - 100).
+- Холодные старты: 0 ₽ (можно включить позже).
+- Total = сумма line items (округление до копеек).
+
+## Поток данных (E2E)
+
+1) Запрос → Knative (Kourier) → запуск/масштабирование waiter → ответ пользователю.
+2) waiter публикует /metrics; Prometheus скрейпит (pull).
+3) Параллельно: события метрик (JSON) → queue-proxy → Redis.
+4) saver → читает Redis → пишет UsageRaw в PostgreSQL.
+5) backend → агрегирует UsageRaw → UsageAggregate (окна).
+6) backend → рассчитывает счёт по тарифам → отдаёт отчёт API/UI.
+7) ai-forecast → прогноз стоимости на будущий период.
+
+## Как подключить новую функцию
+
+1) Собери образ и запушь в локальный реестр:
+   - docker build -t myfunc:latest .
+   - docker tag myfunc:latest localhost:5000/myfunc:latest
+   - docker push localhost:5000/myfunc:latest
+2) Создай Knative Service (image: localhost:5000/myfunc:latest, port 8080).
+3) Добавь /metrics (Prometheus формат) и/или отправку событий в queue-proxy.
+4) Проверь Ready и вызовы по Host.
+5) Данные появятся в UsageRaw/UsageAggregate, счёт посчитается автоматически.
+
+## Диагностика
+
+- ksvc: kubectl get ksvc; kubectl describe ksvc <name>; kubectl logs -l serving.knative.dev/service=<name>
+- БД: docker compose logs postgres; psql -d faas_billing
+- Redis: redis-cli LLEN metrics_queue
+- Backend: curl http://localhost:8080/api/v1/health
+- Функция: curl -H "Host: waiter.default.knative.demo.com" "http://localhost/invoke"
+- Метрики: curl -H "Host: waiter.default.knative.demo.com" "http://localhost/metrics"
+
 
 ## План дальнейшей реализации
 
