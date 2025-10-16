@@ -439,9 +439,6 @@ ML:
 - forecasted_cost — прогнозируемая стоимость.
 - components — детализация (invocations, memory, cold starts)
 
-# Расписание компонентов (Architecture at a glance)
-
-Ниже — краткая карта всех сервисов, слоёв и инфраструктуры. Блок можно вставить в README.
 
 ## Платформа
 
