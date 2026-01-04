@@ -74,7 +74,7 @@ func main() {
 	// Метки для метрик (из env или дефолтные)
 	tenantID := getEnv("TENANT_ID", "demo-tenant")
 	serviceName := getEnv("SERVICE_NAME", "waiter")
-	revision := getEnv("REVISION", "waiter-00001")
+	revision := getEnv("K_REVISION", "rev-unknown")
 	
 	// Детектируем холодный старт (первый запрос после запуска)
 	r.Use(func(c *gin.Context) {
