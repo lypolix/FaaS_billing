@@ -1,0 +1,28 @@
+[0;1;32m●[0m systemd-resolved.service - Network Name Resolution
+     Loaded: loaded (]8;;file://Polina/usr/lib/systemd/system/systemd-resolved.service\/usr/lib/systemd/system/systemd-resolved.service]8;;\; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Tue 2025-10-14 23:14:17 MSK; 1 day 1h ago
+ Invocation: 5ddafdf48b084beabcabb206f9a8823d
+TriggeredBy: [0;1;32m●[0m systemd-resolved-varlink.socket
+             [0;1;32m●[0m systemd-resolved-monitor.socket
+       Docs: ]8;;man:systemd-resolved.service(8)\man:systemd-resolved.service(8)]8;;\
+             ]8;;man:org.freedesktop.resolve1(5)\man:org.freedesktop.resolve1(5)]8;;\
+             ]8;;https://systemd.io/WRITING_NETWORK_CONFIGURATION_MANAGERS\https://systemd.io/WRITING_NETWORK_CONFIGURATION_MANAGERS]8;;\
+             ]8;;https://systemd.io/WRITING_RESOLVER_CLIENTS\https://systemd.io/WRITING_RESOLVER_CLIENTS]8;;\
+   Main PID: 470 (systemd-resolve)
+     Status: "[0;1;36mProcessing requests...[0m"
+      Tasks: 1[0;38;5;245m (limit: 8871)[0m
+     Memory: 2.9M (peak: 10.3M, swap: 2.5M, swap peak: 3.3M, zswap: 3.3K)
+        CPU: 10.596s
+     CGroup: /system.slice/systemd-resolved.service
+             └─[0;38;5;245m470 /usr/lib/systemd/systemd-resolved[0m
+
+окт 15 21:43:37 Polina systemd-resolved[470]: wlp1s0: Bus client set default route setting: yes
+окт 15 21:43:37 Polina systemd-resolved[470]: wlp1s0: Bus client set DNS server list to: 8.8.8.8, 1.1.1.1
+окт 15 21:50:03 Polina systemd-resolved[470]: [0;1;39m[0;1;31m[0;1;39mSwitching to fallback DNS server 9.9.9.9#dns.quad9.net.[0m
+окт 15 21:50:03 Polina systemd-resolved[470]: wlp1s0: Bus client set default route setting: no
+окт 15 21:50:03 Polina systemd-resolved[470]: wlp1s0: Bus client reset DNS server list.
+окт 15 23:29:06 Polina systemd-resolved[470]: Clock change detected. Flushing caches.
+окт 15 23:29:06 Polina systemd-resolved[470]: Closing all remaining TCP connections.
+окт 15 23:29:06 Polina systemd-resolved[470]: Resetting learnt feature levels on all servers.
+окт 15 23:29:12 Polina systemd-resolved[470]: wlp1s0: Bus client set default route setting: yes
+окт 15 23:29:12 Polina systemd-resolved[470]: wlp1s0: Bus client set DNS server list to: 192.168.31.1
