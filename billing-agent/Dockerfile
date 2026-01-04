@@ -2,7 +2,7 @@
 FROM golang:1.25.1-alpine AS builder
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/billing-agent ./main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/billing-agent .
 
 FROM alpine:3.20
 RUN apk --no-cache add ca-certificates && update-ca-certificates
