@@ -8,12 +8,15 @@ spec:
     metadata:
       annotations:
         autoscaling.knative.dev/minScale: "1"
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
     spec:
       containers:
-        - image: dev.local/waiter-service:v1
-          imagePullPolicy: Never
-          ports:
-            - containerPort: 8080
-          env:
-            - name: TENANT_ID
-              value: "demo-tenant"
+      - image: dev.local/waiter-service:v1
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        env:
+        - name: TENANT_ID
+          value: "demo-tenant"
