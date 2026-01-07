@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: usage-aggregator
+  namespace: default
+spec:
+  schedule: "*/1 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: aggregator
+              image: your-registry/backend-aggregator:latest
+              env:
+                - name: DB_HOST
+                  value: "postgres"
+                - name: DB_USER
+                  value: "postgres"
+                - name: DB_PASSWORD
+                  value: "password"
+                - name: DB_NAME
+                  value: "faas_billing"
+                - name: DB_PORT
+                  value: "5432"
+                - name: AGG_WINDOW
+                  value: "1m"
