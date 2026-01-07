@@ -286,4 +286,26 @@ import (
 		  "sha256":       s.ArtifactSHA,
 		})
 	  }
+
+	  func (h Handler) DownloadArtifact(c *gin.Context) {
+		serviceID := c.Param("service_id")
+		uid, err := uuid.Parse(serviceID)
+		if err != nil {
+		  c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		  return
+		}
+	  
+		var s models.Service
+		if err := database.DB.First(&s, "id = ?", uid).Error; err != nil {
+		  c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
+		  return
+		}
+		if s.ArtifactPath == "" {
+		  c.JSON(http.StatusNotFound, gin.H{"error": "artifact not uploaded"})
+		  return
+		}
+	  
+		c.File(s.ArtifactPath)
+	  }
+	  
 	  
