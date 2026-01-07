@@ -16,11 +16,19 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" -o /out/backend ./cmd/backend
 
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w" -o /out/aggregator ./cmd/aggregator
+
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /
+
 COPY --from=build /out/backend /backend
+COPY --from=build /out/aggregator /aggregator
 
 EXPOSE 8080
 ENV BACKENDADDR=":8080"
+
 ENTRYPOINT ["/backend"]
