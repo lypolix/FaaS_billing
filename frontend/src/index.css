@@ -1,16 +1,9 @@
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.2) transparent;
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.15);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
+html, body, #root {
+  height: 100%;
 }
