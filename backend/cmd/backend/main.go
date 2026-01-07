@@ -3,7 +3,9 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
 	"github.com/lypolix/FaaS-billing/internal/database"
@@ -18,6 +20,15 @@ func main() {
 	r := gin.Default()
 	r.MaxMultipartMemory = 200 << 20 
 
+	r.Use(cors.New(cors.Config{
+        AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000"},
+        AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+        AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+        ExposeHeaders:    []string{"Content-Length"},
+        AllowCredentials: true,
+        MaxAge:           12 * time.Hour,
+    }))
+
 
 	h := handlers.NewHandler()
 
@@ -29,6 +40,10 @@ func main() {
 		api.POST("/tenants", h.CreateTenant)
 		api.GET("/tenants", h.GetTenants)
 		api.GET("/tenants/:id", h.GetTenant)
+
+		api.GET("/pricing-plans", h.GetPricingPlans)
+        api.PUT("/tenants/:id/pricing-plan", h.SetTenantPricingPlan)
+        api.GET("/tenants/:id/pricing-plan", h.GetTenantPricingPlan)
 
 		// services
 		api.POST("/services", h.CreateService)
