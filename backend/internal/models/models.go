@@ -30,6 +30,9 @@ type Tenant struct {
 	Timezone     string    `json:"timezone" gorm:"default:'UTC'"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+
+	PricingPlanID *uuid.UUID   `json:"pricing_plan_id" gorm:"type:uuid"`
+    PricingPlan   *PricingPlan `json:"pricing_plan" gorm:"foreignKey:PricingPlanID"`
 }
 
 type Service struct {

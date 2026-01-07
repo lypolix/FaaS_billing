@@ -50,5 +50,8 @@ func main() {
 	}
 	_ = database.DB.Create(&plan).Error
 
+	tenant.PricingPlanID = &plan.ID
+	_ = database.DB.Save(&tenant).Error
+
 	log.Println("Seed completed")
 }
