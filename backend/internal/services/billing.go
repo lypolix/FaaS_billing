@@ -18,7 +18,7 @@ func NewBillingService(db *gorm.DB) *BillingService {
 	return &BillingService{db: db}
 }
 
-// CalculateBill - основная функция расчёта стоимости по формулам Yandex Cloud
+// CalculateBill - основная функция расчёта стоимости по формулам 
 func (s *BillingService) CalculateBill(tenantID string, startTime, endTime time.Time) (*models.BillingResult, error) {
     // 1) Загружаем tenant и берём выбранный plan_id
     var tenant models.Tenant
