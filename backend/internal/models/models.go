@@ -40,6 +40,10 @@ type Service struct {
 	Runtime       string    `json:"runtime"`
 	MemoryLimitMB int       `json:"memory_limit_mb"`
 	CPULimitCores float64   `json:"cpu_limit_cores"`
+	ArtifactPath string `json:"artifact_path"`
+	ArtifactName string `json:"artifact_name"`
+	ArtifactSize int64  `json:"artifact_size"`
+	ArtifactSHA  string `json:"artifact_sha256"`
 	CreatedAt     time.Time `json:"created_at"`
 	
 	Tenant Tenant `json:"tenant" gorm:"foreignKey:TenantID"`
