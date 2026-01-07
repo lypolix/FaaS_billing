@@ -1,12 +1,6 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import {
-  calculateBill,
-  generateBill,
-  getUsageAggregates,
-  listServices,
-  listTenants,
-} from "@/lib/api"
+import { calculateBill, generateBill, getUsageAggregates, listServices, listTenants } from "@/lib/api"
 import { endOfDay, startOfDay, toRFC3339 } from "@/lib/time"
 import { isBillPaid, markBillPaid } from "@/lib/fakePayments"
 
@@ -15,7 +9,7 @@ export default function BillingPage() {
   const servicesQ = useQuery({ queryKey: ["services"], queryFn: () => listServices() })
 
   const [tenantId, setTenantId] = useState("")
-  const [serviceId, setServiceId] = useState<string>("")
+  const [serviceId, setServiceId] = useState("")
   const [start, setStart] = useState(() => toRFC3339(startOfDay()))
   const [end, setEnd] = useState(() => toRFC3339(endOfDay()))
   const [lastBill, setLastBill] = useState<any>(null)
@@ -42,26 +36,31 @@ export default function BillingPage() {
     onSuccess: (data) => setLastBill(data),
   })
 
-  const billKey = useMemo(() => {
-    if (!tenantId) return ""
-    return `${tenantId}:${start}:${end}`
-  }, [tenantId, start, end])
-
+  const billKey = useMemo(() => (tenantId ? `${tenantId}:${start}:${end}` : ""), [tenantId, start, end])
   const paid = billKey ? isBillPaid(billKey) : false
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold">Billing</h1>
-        <p className="mt-1 text-sm text-white/60">
-          Расчёт идёт через /billing/calculate и /billing/generate; “оплата” пока локальная (fake).
-        </p>
+      <header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Billing</h1>
+          <p className="mt-1 text-sm text-white/60">
+            Рассчитай стоимость за период и сгенерируй счёт. Оплата пока фейковая (local).
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-white/70">Tenant-based</span>
+          <span className={paid ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-emerald-200"
+                                : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-2 py-1 text-yellow-200"}>
+            {billKey ? (paid ? "PAID (fake)" : "UNPAID") : "Select tenant"}
+          </span>
+        </div>
       </header>
 
       <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <select
-            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-white/20"
+            className="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm outline-none transition focus:border-white/20 focus:ring-2 focus:ring-white/10"
             value={tenantId}
             onChange={(e) => setTenantId(e.target.value)}
           >
@@ -74,7 +73,7 @@ export default function BillingPage() {
           </select>
 
           <select
-            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-white/20"
+            className="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm outline-none transition focus:border-white/20 focus:ring-2 focus:ring-white/10"
             value={serviceId}
             onChange={(e) => setServiceId(e.target.value)}
             disabled={!tenantId}
@@ -90,13 +89,13 @@ export default function BillingPage() {
           </select>
 
           <input
-            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-white/20"
+            className="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm outline-none transition focus:border-white/20 focus:ring-2 focus:ring-white/10"
             value={start}
             onChange={(e) => setStart(e.target.value)}
             placeholder="start_time RFC3339"
           />
           <input
-            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-white/20"
+            className="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm outline-none transition focus:border-white/20 focus:ring-2 focus:ring-white/10"
             value={end}
             onChange={(e) => setEnd(e.target.value)}
             placeholder="end_time RFC3339"
@@ -104,14 +103,14 @@ export default function BillingPage() {
 
           <div className="md:col-span-2 flex flex-wrap gap-2">
             <button
-              className="rounded-xl bg-white px-4 py-2 text-sm font-medium text-black hover:bg-zinc-200 disabled:opacity-50"
+              className="rounded-xl bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:opacity-50"
               onClick={() => calcM.mutate()}
               disabled={!tenantId || calcM.isPending}
             >
               Calculate
             </button>
             <button
-              className="rounded-xl border border-white/15 bg-transparent px-4 py-2 text-sm font-medium text-white hover:bg-white/5 disabled:opacity-50"
+              className="rounded-xl border border-white/15 bg-transparent px-4 py-2 text-sm font-medium text-white transition hover:bg-white/5 disabled:opacity-50"
               onClick={() => genM.mutate()}
               disabled={!tenantId || genM.isPending}
             >
@@ -119,12 +118,8 @@ export default function BillingPage() {
             </button>
 
             <button
-              className="ml-auto rounded-xl bg-emerald-400 px-4 py-2 text-sm font-medium text-black hover:bg-emerald-300 disabled:opacity-50"
-              onClick={() => {
-                if (!billKey) return
-                // amount можно попробовать достать из lastBill, если у тебя там есть total
-                markBillPaid(billKey)
-              }}
+              className="ml-auto rounded-xl bg-emerald-400 px-4 py-2 text-sm font-medium text-black transition hover:bg-emerald-300 disabled:opacity-50"
+              onClick={() => billKey && markBillPaid(billKey)}
               disabled={!billKey}
             >
               Pay (fake)
@@ -133,65 +128,77 @@ export default function BillingPage() {
 
           {billKey ? (
             <div className="md:col-span-2 text-xs text-white/60">
-              Bill key: <span className="text-white/80">{billKey}</span> — status:{" "}
-              <span className={paid ? "text-emerald-300" : "text-yellow-300"}>
-                {paid ? "PAID (fake)" : "UNPAID"}
-              </span>
+              Bill key: <span className="text-white/80 break-all">{billKey}</span>
             </div>
           ) : null}
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-        <div className="text-sm text-white/70">Usage aggregates</div>
-        {aggsQ.isFetching ? (
-          <div className="mt-3 text-sm text-white/60">Loading...</div>
-        ) : aggsQ.isError ? (
-          <div className="mt-3 text-sm text-red-400">
-            Error: {(aggsQ.error as any)?.message ?? "failed"}
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="text-sm font-medium">Usage aggregates</div>
+          <div className="mt-1 text-xs text-white/50">
+            Фактические агрегаты за период (фильтр tenant/service).
           </div>
-        ) : (
-          <div className="mt-3 overflow-x-auto">
+
+          <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs text-white/50">
                 <tr className="border-b border-white/10">
                   <th className="py-2 pr-4">window</th>
                   <th className="py-2 pr-4">service</th>
-                  <th className="py-2 pr-4">invocations</th>
-                  <th className="py-2 pr-4">duration_ms</th>
+                  <th className="py-2 pr-4">inv</th>
+                  <th className="py-2 pr-4">ms</th>
                   <th className="py-2 pr-4">cost</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/10">
-                {(aggsQ.data?.data ?? []).map((a, idx) => (
-                  <tr key={idx}>
-                    <td className="py-2 pr-4 text-white/80">
-                      {a.window_start} → {a.window_end}
-                    </td>
-                    <td className="py-2 pr-4 text-white/60">{a.service_id}</td>
-                    <td className="py-2 pr-4">{a.invocations ?? "-"}</td>
-                    <td className="py-2 pr-4">{a.duration_ms ?? "-"}</td>
-                    <td className="py-2 pr-4">{a.cost ?? "-"}</td>
-                  </tr>
-                ))}
-                {(aggsQ.data?.data ?? []).length === 0 ? (
+                {aggsQ.isFetching ? (
                   <tr>
                     <td className="py-3 text-white/60" colSpan={5}>
-                      No aggregates for this period/filter.
+                      Loading...
                     </td>
                   </tr>
-                ) : null}
+                ) : aggsQ.isError ? (
+                  <tr>
+                    <td className="py-3 text-red-400" colSpan={5}>
+                      Error: {(aggsQ.error as any)?.message ?? "failed"}
+                    </td>
+                  </tr>
+                ) : (aggsQ.data?.data ?? []).length === 0 ? (
+                  <tr>
+                    <td className="py-3 text-white/60" colSpan={5}>
+                      No aggregates.
+                    </td>
+                  </tr>
+                ) : (
+                  (aggsQ.data?.data ?? []).slice(0, 12).map((a, idx) => (
+                    <tr key={idx} className="hover:bg-white/[0.03]">
+                      <td className="py-2 pr-4 text-xs text-white/70">
+                        {a.window_start.split(".")[0]} → {a.window_end.split(".")[0]}
+                      </td>
+                      <td className="py-2 pr-4 text-xs text-white/60">{a.service_id}</td>
+                      <td className="py-2 pr-4">{a.invocations ?? "-"}</td>
+                      <td className="py-2 pr-4">{a.duration_ms ?? "-"}</td>
+                      <td className="py-2 pr-4">{a.cost ?? "-"}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-        )}
-      </section>
+        </div>
 
-      <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-        <div className="text-sm text-white/70">Last bill response</div>
-        <pre className="mt-3 max-h-80 overflow-auto rounded-xl border border-white/10 bg-zinc-950 p-3 text-xs text-white/80">
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="text-sm font-medium">Last bill response</div>
+          <div className="mt-1 text-xs text-white/50">
+            Ответ от /billing/calculate или /billing/generate.
+          </div>
+
+          <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl border border-white/10 bg-zinc-950/60 p-3 text-xs text-white/80">
 {lastBill ? JSON.stringify(lastBill, null, 2) : "No bill yet. Click Calculate or Generate bill."}
-        </pre>
+          </pre>
+        </div>
       </section>
     </div>
   )
