@@ -16,8 +16,9 @@ func main() {
 	database.Migrate()
 
 	r := gin.Default()
+	r.MaxMultipartMemory = 200 << 20 
 
-	// Конструктор хендлеров принимает *gorm.DB через package database
+
 	h := handlers.NewHandler()
 
 	api := r.Group("/api/v1")
@@ -32,6 +33,9 @@ func main() {
 		// services
 		api.POST("/services", h.CreateService)
 		api.GET("/services", h.GetServices)
+		api.POST("/services/:id/upload", h.UploadServiceArtifact)
+		api.GET("/artifacts/:service_id/:filename", h.DownloadArtifact)
+
 
 		// usage aggregates
 		api.GET("/usage-aggregates", h.GetUsageAggregates)
