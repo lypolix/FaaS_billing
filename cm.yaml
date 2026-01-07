@@ -1,0 +1,137 @@
+apiVersion: v1
+data:
+  _example: |
+    ################################
+    #                              #
+    #    EXAMPLE CONFIGURATION     #
+    #                              #
+    ################################
+
+    # This block is not actually functional configuration,
+    # but serves to illustrate the available configuration
+    # options and document them in a way that is accessible
+    # to users that `kubectl edit` this config map.
+    #
+    # These sample configuration options may be copied out of
+    # this example block and unindented to be in the data block
+    # to actually change the configuration.
+
+    # logging.enable-var-log-collection defaults to false.
+    # The fluentd daemon set will be set up to collect /var/log if
+    # this flag is true.
+    logging.enable-var-log-collection: "false"
+
+    # logging.revision-url-template provides a template to use for producing the
+    # logging URL that is injected into the status of each Revision.
+    logging.revision-url-template: "http://logging.example.com/?revisionUID=${REVISION_UID}"
+
+    # If non-empty, this enables queue proxy writing user request logs to stdout, excluding probe
+    # requests.
+    # NB: after 0.18 release logging.enable-request-log must be explicitly set to true
+    # in order for request logging to be enabled.
+    #
+    # The value determines the shape of the request logs and it must be a valid go text/template.
+    # It is important to keep this as a single line. Multiple lines are parsed as separate entities
+    # by most collection agents and will split the request logs into multiple records.
+    #
+    # The following fields and functions are available to the template:
+    #
+    # Request: An http.Request (see https://golang.org/pkg/net/http/#Request)
+    # representing an HTTP request received by the server.
+    #
+    # Response:
+    # struct {
+    #   Code    int       // HTTP status code (see https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml)
+    #   Size    int       // An int representing the size of the response.
+    #   Latency float64   // A float64 representing the latency of the response in seconds.
+    # }
+    #
+    # Revision:
+    # struct {
+    #   Name          string  // Knative revision name
+    #   Namespace     string  // Knative revision namespace
+    #   Service       string  // Knative service name
+    #   Configuration string  // Knative configuration name
+    #   PodName       string  // Name of the pod hosting the revision
+    #   PodIP         string  // IP of the pod hosting the revision
+    # }
+    #
+    logging.request-log-template: '{"httpRequest": {"requestMethod": "{{.Request.Method}}", "requestUrl": "{{js .Request.RequestURI}}", "requestSize": "{{.Request.ContentLength}}", "status": {{.Response.Code}}, "responseSize": "{{.Response.Size}}", "userAgent": "{{js .Request.UserAgent}}", "remoteIp": "{{js .Request.RemoteAddr}}", "serverIp": "{{.Revision.PodIP}}", "referer": "{{js .Request.Referer}}", "latency": "{{.Response.Latency}}s", "protocol": "{{.Request.Proto}}"}, "traceId": "{{index .Request.Header "X-B3-Traceid"}}"}'
+
+    # If true, the request logging will be enabled.
+    logging.enable-request-log: "false"
+
+    # If true, this enables queue proxy writing request logs for probe requests to stdout.
+    # It uses the same template for user requests, i.e. logging.request-log-template.
+    logging.enable-probe-request-log: "false"
+
+    # metrics-protocol field specifies the protocol used when exporting metrics
+    # It supports either 'none' (the default), 'prometheus', 'http/protobuf' (OTLP HTTP), 'grpc' (OTLP gRPC)
+    metrics-protocol: http/protobuf
+
+    # metrics-endpoint field specifies the destination metrics should be exporter to.
+    #
+    # The endpoint MUST be set when the protocol is http/protobuf or grpc.
+    # The endpoint MUST NOT be set when the protocol is none.
+    #
+    # When the protocol is prometheus the endpoint can accept a 'host:port' string to customize the
+    # listening host interface and port.
+    metrics-endpoint: http://example.com/v1/traces
+
+    # metrics-export-interval specifies the global metrics reporting period for control and data plane components.
+    # If a zero or negative value is passed the default reporting OTel period is used (60 secs).
+    metrics-export-interval: 60s
+
+    # request-metrics-protocol field specifies the protocol used when exporting queue-proxy metrics
+    # It supports either 'none' (the default), 'prometheus', 'http/protobuf' (OTLP HTTP), 'grpc' (OTLP gRPC)
+    request-metrics-protocol: http/protobuf
+
+    # request-metrics-endpoint field specifies the destination metrics from the queue proxy should be exporter to.
+    #
+    # The endpoint MUST be set when the protocol is http/protobuf or grpc.
+    # The endpoint MUST NOT be set when the protocol is none.
+    #
+    # When the protocol is prometheus the endpoint can accept a 'host:port' string to customize the
+    # listening host interface and port.
+    request-metrics-endpoint: http://promstack-kube-prometheus-prometheus.observability:9090/api/v1/otlp/v1/metrics
+
+    # request-metrics-export-interval specifies the global metrics reporting period for the queue-proxy.
+    #
+    # If a zero or negative value is passed the default reporting OTel period is used (60 secs).
+    request-metrics-export-interval: 60s
+
+    # runtime-profiling indicates whether it is allowed to retrieve runtime profiling data from
+    # the pods via an HTTP server in the format expected by the pprof visualization tool. When
+    # enabled, the Knative Serving pods expose the profiling data on an alternate HTTP port 8008.
+    # The HTTP context root for profiling is then /debug/pprof/.
+    runtime-profiling: enabled
+
+    # tracing-protocol field specifies the protocol used when exporting traces
+    # It supports either 'none' (the default), 'http/protobuf' (OTLP HTTP), 'grpc' (OTLP gRPC)
+    # or `stdout` for debugging purposes
+    tracing-protocol: http/protobuf
+
+    # tracing-endpoint field specifies the destination traces should be exporter to.
+    #
+    # The endpoint MUST be set when the protocol is http/protobuf or grpc.
+    # The endpoint MUST NOT be set when the protocol is none.
+    tracing-endpoint: http://jaeger-collector.observability:4318/v1/traces
+
+    # tracing-sampling-rate allows the user to specify what percentage of all traces should be exported
+    # The value should be between 0 (never sample) to 1 (always sample)
+    tracing-sampling-rate: "1"
+kind: ConfigMap
+metadata:
+  annotations:
+    knative.dev/example-checksum: f183bbc6
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"_example":"################################\n#                              #\n#    EXAMPLE CONFIGURATION     #\n#                              #\n################################\n\n# This block is not actually functional configuration,\n# but serves to illustrate the available configuration\n# options and document them in a way that is accessible\n# to users that `kubectl edit` this config map.\n#\n# These sample configuration options may be copied out of\n# this example block and unindented to be in the data block\n# to actually change the configuration.\n\n# logging.enable-var-log-collection defaults to false.\n# The fluentd daemon set will be set up to collect /var/log if\n# this flag is true.\nlogging.enable-var-log-collection: \"false\"\n\n# logging.revision-url-template provides a template to use for producing the\n# logging URL that is injected into the status of each Revision.\nlogging.revision-url-template: \"http://logging.example.com/?revisionUID=${REVISION_UID}\"\n\n# If non-empty, this enables queue proxy writing user request logs to stdout, excluding probe\n# requests.\n# NB: after 0.18 release logging.enable-request-log must be explicitly set to true\n# in order for request logging to be enabled.\n#\n# The value determines the shape of the request logs and it must be a valid go text/template.\n# It is important to keep this as a single line. Multiple lines are parsed as separate entities\n# by most collection agents and will split the request logs into multiple records.\n#\n# The following fields and functions are available to the template:\n#\n# Request: An http.Request (see https://golang.org/pkg/net/http/#Request)\n# representing an HTTP request received by the server.\n#\n# Response:\n# struct {\n#   Code    int       // HTTP status code (see https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml)\n#   Size    int       // An int representing the size of the response.\n#   Latency float64   // A float64 representing the latency of the response in seconds.\n# }\n#\n# Revision:\n# struct {\n#   Name          string  // Knative revision name\n#   Namespace     string  // Knative revision namespace\n#   Service       string  // Knative service name\n#   Configuration string  // Knative configuration name\n#   PodName       string  // Name of the pod hosting the revision\n#   PodIP         string  // IP of the pod hosting the revision\n# }\n#\nlogging.request-log-template: '{\"httpRequest\": {\"requestMethod\": \"{{.Request.Method}}\", \"requestUrl\": \"{{js .Request.RequestURI}}\", \"requestSize\": \"{{.Request.ContentLength}}\", \"status\": {{.Response.Code}}, \"responseSize\": \"{{.Response.Size}}\", \"userAgent\": \"{{js .Request.UserAgent}}\", \"remoteIp\": \"{{js .Request.RemoteAddr}}\", \"serverIp\": \"{{.Revision.PodIP}}\", \"referer\": \"{{js .Request.Referer}}\", \"latency\": \"{{.Response.Latency}}s\", \"protocol\": \"{{.Request.Proto}}\"}, \"traceId\": \"{{index .Request.Header \"X-B3-Traceid\"}}\"}'\n\n# If true, the request logging will be enabled.\nlogging.enable-request-log: \"false\"\n\n# If true, this enables queue proxy writing request logs for probe requests to stdout.\n# It uses the same template for user requests, i.e. logging.request-log-template.\nlogging.enable-probe-request-log: \"false\"\n\n# metrics-protocol field specifies the protocol used when exporting metrics\n# It supports either 'none' (the default), 'prometheus', 'http/protobuf' (OTLP HTTP), 'grpc' (OTLP gRPC)\nmetrics-protocol: http/protobuf\n\n# metrics-endpoint field specifies the destination metrics should be exporter to.\n#\n# The endpoint MUST be set when the protocol is http/protobuf or grpc.\n# The endpoint MUST NOT be set when the protocol is none.\n#\n# When the protocol is prometheus the endpoint can accept a 'host:port' string to customize the\n# listening host interface and port.\nmetrics-endpoint: http://example.com/v1/traces\n\n# metrics-export-interval specifies the global metrics reporting period for control and data plane components.\n# If a zero or negative value is passed the default reporting OTel period is used (60 secs).\nmetrics-export-interval: 60s\n\n# request-metrics-protocol field specifies the protocol used when exporting queue-proxy metrics\n# It supports either 'none' (the default), 'prometheus', 'http/protobuf' (OTLP HTTP), 'grpc' (OTLP gRPC)\nrequest-metrics-protocol: http/protobuf\n\n# request-metrics-endpoint field specifies the destination metrics from the queue proxy should be exporter to.\n#\n# The endpoint MUST be set when the protocol is http/protobuf or grpc.\n# The endpoint MUST NOT be set when the protocol is none.\n#\n# When the protocol is prometheus the endpoint can accept a 'host:port' string to customize the\n# listening host interface and port.\nrequest-metrics-endpoint: http://promstack-kube-prometheus-prometheus.observability:9090/api/v1/otlp/v1/metrics\n\n# request-metrics-export-interval specifies the global metrics reporting period for the queue-proxy.\n#\n# If a zero or negative value is passed the default reporting OTel period is used (60 secs).\nrequest-metrics-export-interval: 60s\n\n# runtime-profiling indicates whether it is allowed to retrieve runtime profiling data from\n# the pods via an HTTP server in the format expected by the pprof visualization tool. When\n# enabled, the Knative Serving pods expose the profiling data on an alternate HTTP port 8008.\n# The HTTP context root for profiling is then /debug/pprof/.\nruntime-profiling: enabled\n\n# tracing-protocol field specifies the protocol used when exporting traces\n# It supports either 'none' (the default), 'http/protobuf' (OTLP HTTP), 'grpc' (OTLP gRPC)\n# or `stdout` for debugging purposes\ntracing-protocol: http/protobuf\n\n# tracing-endpoint field specifies the destination traces should be exporter to.\n#\n# The endpoint MUST be set when the protocol is http/protobuf or grpc.\n# The endpoint MUST NOT be set when the protocol is none.\ntracing-endpoint: http://jaeger-collector.observability:4318/v1/traces\n\n# tracing-sampling-rate allows the user to specify what percentage of all traces should be exported\n# The value should be between 0 (never sample) to 1 (always sample)\ntracing-sampling-rate: \"1\"\n"},"kind":"ConfigMap","metadata":{"annotations":{"knative.dev/example-checksum":"f183bbc6"},"labels":{"app.kubernetes.io/component":"observability","app.kubernetes.io/name":"knative-serving","app.kubernetes.io/version":"1.20.1"},"name":"config-observability","namespace":"knative-serving"}}
+  creationTimestamp: "2026-01-04T19:33:25Z"
+  labels:
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/name: knative-serving
+    app.kubernetes.io/version: 1.20.1
+  name: config-observability
+  namespace: knative-serving
+  resourceVersion: "720"
+  uid: e265cff9-a19d-4d4e-8c24-d7ca3b0003b7
