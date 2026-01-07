@@ -18,80 +18,85 @@ func NewBillingService(db *gorm.DB) *BillingService {
 	return &BillingService{db: db}
 }
 
-// CalculateBill - основная функция расчёта стоимости по формулам Yandex Cloud
+// CalculateBill - основная функция расчёта стоимости по формулам 
 func (s *BillingService) CalculateBill(tenantID string, startTime, endTime time.Time) (*models.BillingResult, error) {
-	// Получаем тарифный план
-	var pricingPlan models.PricingPlan
-	err := s.db.Where("(tenant_id = ? OR tenant_id IS NULL) AND active = ?", tenantID, true).
-		Order("tenant_id DESC").First(&pricingPlan).Error
-	if err != nil {
-		return nil, fmt.Errorf("pricing plan not found: %w", err)
-	}
+    // 1) Загружаем tenant и берём выбранный plan_id
+    var tenant models.Tenant
+    if err := s.db.First(&tenant, "id = ?", tenantID).Error; err != nil {
+        return nil, fmt.Errorf("tenant not found: %w", err)
+    }
 
-	// Получаем агрегированные данные за период
-	var aggregates []models.UsageAggregate
-	err = s.db.Where("tenant_id = ? AND window_start >= ? AND window_end <= ?", 
-		tenantID, startTime, endTime).Find(&aggregates).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to get usage aggregates: %w", err)
-	}
+    if tenant.PricingPlanID == nil {
+        return nil, fmt.Errorf("tenant has no pricing plan assigned")
+    }
 
-	// Считаем общие показатели
-	totals := s.calculateTotals(aggregates)
-	
-	// Применяем биллинговые формулы
-	result := &models.BillingResult{
-		TenantID:    uuid.MustParse(tenantID),
-		PeriodStart: startTime,
-		PeriodEnd:   endTime,
-		Currency:    pricingPlan.Currency,
-		LineItems:   []models.BillingLineItem{},
-	}
+    // 2) Загружаем тарифный план строго по PricingPlanID
+    var pricingPlan models.PricingPlan
+    if err := s.db.First(&pricingPlan, "id = ? AND active = ?", *tenant.PricingPlanID, true).Error; err != nil {
+        return nil, fmt.Errorf("pricing plan not found or inactive: %w", err)
+    }
 
-	// 1. Расчёт стоимости вызовов
-	invocationsItem := s.calculateInvocationsCost(totals.TotalInvocations, pricingPlan)
-	result.LineItems = append(result.LineItems, invocationsItem)
+    // 3) Получаем агрегированные данные за период
+    var aggregates []models.UsageAggregate
+    err := s.db.Where(
+        "tenant_id = ? AND window_start >= ? AND window_end <= ?",
+        tenantID, startTime, endTime,
+    ).Find(&aggregates).Error
+    if err != nil {
+        return nil, fmt.Errorf("failed to get usage aggregates: %w", err)
+    }
 
-	// 2. Расчёт стоимости времени выполнения (ГБ×час)
-	computeItem := s.calculateComputeCost(totals.TotalGBHours, pricingPlan)
-	result.LineItems = append(result.LineItems, computeItem)
+    // 4) Считаем общие показатели
+    totals := s.calculateTotals(aggregates)
 
-	// 3. Расчёт стоимости исходящего трафика
-	if totals.TotalEgressGB > 0 {
-		egressItem := s.calculateEgressCost(totals.TotalEgressGB, pricingPlan)
-		result.LineItems = append(result.LineItems, egressItem)
-	}
+    // 5) Применяем биллинговые формулы
+    result := &models.BillingResult{
+        TenantID:    uuid.MustParse(tenantID),
+        PeriodStart: startTime,
+        PeriodEnd:   endTime,
+        Currency:    pricingPlan.Currency,
+        LineItems:   []models.BillingLineItem{},
+    }
 
-	// 4. Дополнительно: холодные старты (пока бесплатно)
-	coldStartsItem := models.BillingLineItem{
-		Description:    "Холодные старты",
-		Quantity:       float64(totals.TotalColdStarts),
-		UnitPrice:      pricingPlan.PricePerColdStart,
-		FreeTierUsed:   float64(totals.TotalColdStarts), // все бесплатно пока
-		BillableAmount: 0,
-		TotalCost:      0,
-		Currency:       pricingPlan.Currency,
-	}
-	result.LineItems = append(result.LineItems, coldStartsItem)
+    invocationsItem := s.calculateInvocationsCost(totals.TotalInvocations, pricingPlan)
+    result.LineItems = append(result.LineItems, invocationsItem)
 
-	// Подсчитываем общую стоимость
-	var totalCost float64
-	for _, item := range result.LineItems {
-		totalCost += item.TotalCost
-	}
-	result.TotalCost = math.Round(totalCost*100) / 100 // округляем до копеек
+    computeItem := s.calculateComputeCost(totals.TotalGBHours, pricingPlan)
+    result.LineItems = append(result.LineItems, computeItem)
 
-	// Формируем сводку free tier
-	result.FreeTierSummary = models.FreeTierSummary{
-		InvocationsUsed:  totals.TotalInvocations,
-		InvocationsLimit: pricingPlan.FreeTierInvocations,
-		GBHoursUsed:      totals.TotalGBHours,
-		GBHoursLimit:     pricingPlan.FreeTierGBHours,
-		EgressGBUsed:     totals.TotalEgressGB,
-		EgressGBLimit:    pricingPlan.FreeTierEgressGB,
-	}
+    if totals.TotalEgressGB > 0 {
+        egressItem := s.calculateEgressCost(totals.TotalEgressGB, pricingPlan)
+        result.LineItems = append(result.LineItems, egressItem)
+    }
 
-	return result, nil
+    coldStartsItem := models.BillingLineItem{
+        Description:    "Холодные старты",
+        Quantity:       float64(totals.TotalColdStarts),
+        UnitPrice:      pricingPlan.PricePerColdStart,
+        FreeTierUsed:   float64(totals.TotalColdStarts), 
+        BillableAmount: 0,
+        TotalCost:      0,
+        Currency:       pricingPlan.Currency,
+    }
+    result.LineItems = append(result.LineItems, coldStartsItem)
+
+    var totalCost float64
+    for _, item := range result.LineItems {
+        totalCost += item.TotalCost
+    }
+    result.TotalCost = math.Round(totalCost*100) / 100 
+    
+
+    result.FreeTierSummary = models.FreeTierSummary{
+        InvocationsUsed:  totals.TotalInvocations,
+        InvocationsLimit: pricingPlan.FreeTierInvocations,
+        GBHoursUsed:      totals.TotalGBHours,
+        GBHoursLimit:     pricingPlan.FreeTierGBHours,
+        EgressGBUsed:     totals.TotalEgressGB,
+        EgressGBLimit:    pricingPlan.FreeTierEgressGB,
+    }
+
+    return result, nil
 }
 
 type UsageTotals struct {
